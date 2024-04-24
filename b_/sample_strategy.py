@@ -1,12 +1,11 @@
 from freqtrade.strategy.interface import IStrategy
+from freqtrade.persistence import Trade
 from pandas import DataFrame
 import talib.abstract as ta
 
-
-
 class MyStrategy(IStrategy):
-    INTERFACE_VERSION = 2
-    
+    INTERFACE_VERSION = 3  # Updated interface version
+
     # Strategy parameters
     minimal_roi = {
         "0": 0.01  # Minimum ROI at any time.
@@ -33,36 +32,32 @@ class MyStrategy(IStrategy):
         return dataframe
 
     def populate_buy_trend(self, dataframe: DataFrame) -> DataFrame:
-        conditions = []
-        # Condition: Target bearish candle
-        conditions.append(
+        conditions = (
             (dataframe['close'] < dataframe['open']) &  # Bearish candle
             (dataframe['low'] < dataframe['bb_lowerband']) &  # Lowest price below lower BBand
             (dataframe['close'] < dataframe['bb_lowerband']) &  # Closing price below lower BBand
             (dataframe['rsi'] < 30)  # RSI less than 30
         )
         
-        if conditions:
-            # Only consider the first bullish candle after the bearish candle
-            dataframe.loc[
-                (dataframe['close'] > dataframe['open']) &
-                (dataframe['close'].shift(1) < dataframe['open'].shift(1)) &
-                conditions[-1], 'buy'] = 1
+        dataframe.loc[
+            conditions &
+            (dataframe['close'].shift(-1) > dataframe['open'].shift(-1)), 'buy'] = 1  # Buy on the next candle if it is bullish
 
         return dataframe
 
-    def custom_stoploss(self, dataframe: DataFrame, trade: 'Trade', current_time: 'datetime', current_rate: float, current_profit: float, **kwargs) -> float:
-        stop_loss_trigger = -0.5 * dataframe['atr'].iloc[-1]
-        return stop_loss_trigger
+    def custom_stoploss(self, trade: Trade, current_time: 'datetime', current_rate: float, current_profit: float, **kwargs) -> float:
+        # Retrieve the ATR value from the dataframe at the trade's open candle
+        atr = trade.open_df['atr'].iloc[-1] if 'atr' in trade.open_df else 0
+        return -0.5 * atr
 
-    def custom_stake_amount(self, balance: float, entry_price: float, stop_loss_price: float) -> float:
-        price_difference = abs(entry_price - stop_loss_price)
+    def custom_stake_amount(self, pair: str, current_time: 'datetime', current_rate: float, **kwargs) -> float:
+        balance = self.wallets.get_free(pair.split('/')[0])
+        stop_loss_price = current_rate - (0.5 * self.dp.get_analyzed_dataframe(pair)['atr'].iloc[-1])
+        price_difference = abs(current_rate - stop_loss_price)
         stake_amount = (balance * self.RISK_LEVEL) / price_difference
         return stake_amount * self.LEVERAGE
 
     def populate_sell_trend(self, dataframe: DataFrame) -> DataFrame:
         dataframe.loc[
-            (
-                (dataframe['close'] > dataframe['buy_price'] + dataframe['atr'] * 1.0)  # Take profit condition
-            ), 'sell'] = 1
+            (dataframe['close'] > dataframe['buy_price'] + dataframe['atr'] * 1.0), 'sell'] = 1  # Take profit condition
         return dataframe
