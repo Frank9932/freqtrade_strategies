@@ -4,7 +4,7 @@ from pandas import DataFrame
 import talib.abstract as ta
 
 class MyStrategy(IStrategy):
-    INTERFACE_VERSION = 3  # Updated interface version
+    INTERFACE_VERSION = 3  # Updated interface version to V3
 
     # Strategy parameters
     minimal_roi = {
@@ -31,7 +31,7 @@ class MyStrategy(IStrategy):
         dataframe['atr'] = ta.ATR(dataframe, timeperiod=14)
         return dataframe
 
-    def populate_buy_trend(self, dataframe: DataFrame) -> DataFrame:
+    def populate_entry_trend(self, dataframe: DataFrame) -> DataFrame:
         conditions = (
             (dataframe['close'] < dataframe['open']) &  # Bearish candle
             (dataframe['low'] < dataframe['bb_lowerband']) &  # Lowest price below lower BBand
@@ -41,7 +41,7 @@ class MyStrategy(IStrategy):
         
         dataframe.loc[
             conditions &
-            (dataframe['close'].shift(-1) > dataframe['open'].shift(-1)), 'buy'] = 1  # Buy on the next candle if it is bullish
+            (dataframe['close'].shift(-1) > dataframe['open'].shift(-1)), 'enter_long'] = 1  # Enter long on the next candle if it is bullish
 
         return dataframe
 
@@ -57,7 +57,7 @@ class MyStrategy(IStrategy):
         stake_amount = (balance * self.RISK_LEVEL) / price_difference
         return stake_amount * self.LEVERAGE
 
-    def populate_sell_trend(self, dataframe: DataFrame) -> DataFrame:
+    def populate_exit_trend(self, dataframe: DataFrame) -> DataFrame:
         dataframe.loc[
-            (dataframe['close'] > dataframe['buy_price'] + dataframe['atr'] * 1.0), 'sell'] = 1  # Take profit condition
+            (dataframe['close'] > dataframe['buy_price'] + dataframe['atr'] * 1.0), 'exit_long'] = 1  # Take profit condition
         return dataframe
